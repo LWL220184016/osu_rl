@@ -12,7 +12,7 @@ using osu.Framework.Logging;
 using osu.Framework.Platform;
 using osu.Game;
 using osu.Game.IPC;
-using osu.Game.Tournament;
+//using osu.Game.Tournament;
 using SDL;
 using Velopack;
 
@@ -134,15 +134,15 @@ namespace osu.Desktop
                     }
                 }
 
-                if (tournamentClient)
-                    host.Run(new TournamentGame());
-                else
+                //if (tournamentClient)
+                //    host.Run(new TournamentGame());
+                //else
+                //{
+                host.Run(new OsuGameDesktop(args)
                 {
-                    host.Run(new OsuGameDesktop(args)
-                    {
-                        IsFirstRun = isFirstRun
-                    });
-                }
+                    IsFirstRun = isFirstRun
+                });
+                //}
             }
         }
 

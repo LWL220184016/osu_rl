@@ -9,19 +9,21 @@ using System.Threading.Tasks;
 using Microsoft.Win32;
 using osu.Desktop.Performance;
 using osu.Desktop.Security;
-using osu.Framework.Platform;
-using osu.Game;
 using osu.Desktop.Updater;
-using osu.Framework;
-using osu.Framework.Logging;
-using osu.Game.Updater;
 using osu.Desktop.Windows;
+using osu.Framework;
 using osu.Framework.Allocation;
+using osu.Framework.Logging;
+using osu.Framework.Platform;
+using osu.Framework.Screens;
+using osu.Framework.Threading;
+using osu.Game;
 using osu.Game.Configuration;
 using osu.Game.IO;
 using osu.Game.IPC;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Performance;
+using osu.Game.Updater;
 using osu.Game.Utils;
 
 namespace osu.Desktop
@@ -127,9 +129,19 @@ namespace osu.Desktop
             return true;
         }
 
+        // Add this for send data to API Server
+        public new Scheduler Scheduler => base.Scheduler;
+        // Add this for send data to API Server
+        public IScreen GetCurrentScreen() => ScreenStack.CurrentScreen;
+
         protected override void LoadComplete()
         {
             base.LoadComplete();
+
+            // Add this for send data to API Server
+            var server = new ApiServer(this);
+            // Add this for send data to API Server
+            server.Start();
 
             LoadComponentAsync(new DiscordRichPresence(), Add);
 

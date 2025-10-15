@@ -147,22 +147,22 @@ internal class ApiServer : IDisposable
                 using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
                 var jsonString = await reader.ReadToEndAsync();
 
-                var action = jsonString
+                //var action = jsonString
 
-                if (action == null)
-                {
-                    response.StatusCode = (int)HttpStatusCode.BadRequest; // 400 Bad Request 表示客戶端發送的資料有誤
-                }
+                //if (action == null)
+                //{
+                //    response.StatusCode = (int)HttpStatusCode.BadRequest; // 400 Bad Request 表示客戶端發送的資料有誤
+                //}
 
 
-                if (action.click == true)
-                {
-                    game.TriggerClick();
-                }
-                else if (action.move != null)
-                {
-                    player.MoveTo();
-                }
+                //if (action.click == true)
+                //{
+                //    game.TriggerClick();
+                //}
+                //else if (action.move != null)
+                //{
+                //    player.MoveTo();
+                //}
                 // 回應成功狀態碼
                 response.StatusCode = (int)HttpStatusCode.NoContent; // 204 No Content 通常用於表示成功處理但無需返回內容
             }

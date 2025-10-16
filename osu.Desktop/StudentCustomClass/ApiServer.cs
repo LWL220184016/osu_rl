@@ -8,9 +8,20 @@ using System.Threading.Tasks;
 using osu.Desktop;
 using osu.Framework.Screens;
 using osu.Game.Screens.Play;
-using osu.Framework.Input.Handlers.Mouse;
-using osuTK.Input;
 
+using osu.Desktop.StudentCustomClass;
+using System.Collections.Concurrent;
+using osu.Framework.Input.StateChanges;
+using osu.Framework.Extensions.EnumExtensions;
+using System.Collections.Immutable;
+using osu.Framework.Input.Handlers;
+using osu.Framework.Platform.Windows;
+using osu.Framework.Input.Handlers.Keyboard;
+using System.Diagnostics;
+using OpenTabletDriver.Plugin;
+using osu.Framework.Logging;
+//KeyboardHandler
+//WindowsGameHost
 
 // API 服務器將在 OsuGameDesktop.cs 中的 LoadComplete 函數中啓動
 // 在 OsuGameDesktop.cs 中的 LoadComplete 上方中移除下方兩行代碼
@@ -32,12 +43,15 @@ internal class ApiServer : IDisposable
     private CancellationTokenSource? cts;
     private Task? listenTask;
     private readonly string url = "http://localhost:5000/";
+    private ApiInputHandler apiInputHandler;
+    private ImmutableArray<InputHandler> availableInputHandler;
 
 
-    // 修改 #2: 建構函式也使用 OsuGameDesktop
-    public ApiServer(OsuGameDesktop game)
+    public ApiServer(OsuGameDesktop game, ApiInputHandler handler)
     {
         this.game = game;
+        this.apiInputHandler = handler; // 關鍵：保存從外部傳入的實例
+        //this.availableInputHandler = availableInputHandler;
         listener.Prefixes.Add(url);
     }
 
@@ -47,7 +61,7 @@ internal class ApiServer : IDisposable
         listener.Start();
         cts = new CancellationTokenSource();
         listenTask = Task.Run(() => listenLoopAsync(cts.Token));
-        Console.WriteLine("✅ API Server started on " + url);
+        System.Diagnostics.Debug.WriteLine("✅ API Server started on " + url);
     }
 
     private async Task listenLoopAsync(CancellationToken token)
@@ -61,7 +75,7 @@ internal class ApiServer : IDisposable
             }
         }
         catch (HttpListenerException) when (token.IsCancellationRequested) { }
-        catch (Exception ex) { Console.WriteLine($"[API Server Error] {ex}"); }
+        catch (Exception ex) { Debug.WriteLine($"[API Server Error] {ex}"); }
     }
 
     private Task<object> getCurrentStateAsync()
@@ -118,7 +132,7 @@ internal class ApiServer : IDisposable
         return tcs.Task;
     }
 
-    private async Task sendSuccessResponse(HttpListenerResponse response, string originalJsonData, bool actionStatus)
+    private async Task sendSuccessResponse(HttpListenerResponse response, string originalJsonData, ConcurrentQueue<IInput> PendingInputs)
     {
         try
         {
@@ -126,11 +140,20 @@ internal class ApiServer : IDisposable
             //    我們假設傳入的 originalJsonData 必然是個有效的 JSON 物件，因為它在之前已經被驗證過了
             var jsonObject = System.Text.Json.Nodes.JsonNode.Parse(originalJsonData)!.AsObject();
 
-            // 2. 新增或更新 'actionStatus' 屬性
-            jsonObject["actionStatus"] = actionStatus;
+            jsonObject["PendingInputs_count"] = PendingInputs.Count;
 
-            // 3. 將修改後的物件序列化回字串
+            //int i = 0;
+            //foreach (var handler in availableInputHandler)
+            //{
+            //    i++;
+            //    jsonObject[i.ToString()] = handler.ToString();
+            //}
+
             string newJsonPayload = jsonObject.ToJsonString();
+
+
+
+            // 2. 新增或更新 'actionStatus' 屬性
 
             // 4. 傳送新的 JSON payload
             response.StatusCode = (int)HttpStatusCode.OK; // 200 OK
@@ -142,7 +165,7 @@ internal class ApiServer : IDisposable
         catch (Exception ex)
         {
             // 如果在處理成功回應時發生意外（例如 JSON 解析失敗），則回傳內部伺服器錯誤
-            await sendErrorResponse(response, HttpStatusCode.InternalServerError, $"建立成功回應時發生錯誤: {ex.Message}");
+            await sendErrorResponse(response, HttpStatusCode.InternalServerError, $"An error occurred while building a successful response: {ex.Message}");
         }
     }
 
@@ -169,6 +192,7 @@ internal class ApiServer : IDisposable
             // 修改 #1: 根據 HTTP 方法和路徑來分發請求
             if (request.HttpMethod == "GET" && path == "/state")
             {
+                Logger.Log("student: Received GET request---------------------------------------------------------------------------------------------------------------------------------------", LoggingTarget.Input);
                 var state = await getCurrentStateAsync().ConfigureAwait(false);
                 var json = JsonSerializer.Serialize(state);
                 var buffer = System.Text.Encoding.UTF8.GetBytes(json);
@@ -178,84 +202,45 @@ internal class ApiServer : IDisposable
             // 新增 #4: 處理 POST request 到 /action 路徑
             else if (request.HttpMethod == "POST" && path == "/action")
             {
-                IScreen currentScreen = game.GetCurrentScreen();
-                if (!(currentScreen is Player player && player.IsLoaded))
-                {
-                    await sendErrorResponse(response, HttpStatusCode.Conflict, "遊戲尚未載入或目前畫面不接受操作。");
-                    return;
-                }
 
                 using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
                 var jsonString = await reader.ReadToEndAsync();
-                bool actionStatus = false;
 
                 if (string.IsNullOrWhiteSpace(jsonString))
                 {
-                    await sendErrorResponse(response, HttpStatusCode.BadRequest, "請求內文 (Request body) 不得為空。");
+                    await sendErrorResponse(response, HttpStatusCode.BadRequest, "Request body cannot be null。");
                     return;
                 }
 
                 try
                 {
                     var actionNode = System.Text.Json.Nodes.JsonNode.Parse(jsonString);
-                    var actionObject = actionNode as System.Text.Json.Nodes.JsonObject;
 
-                    if (actionObject == null)
+                    if (actionNode is not System.Text.Json.Nodes.JsonObject actionObject)
                     {
-                        await sendErrorResponse(response, HttpStatusCode.BadRequest, "傳入的 JSON 格式必須是一個物件。");
+                        await sendErrorResponse(response, HttpStatusCode.BadRequest, "The incoming JSON format must be an object。");
                         return;
                     }
 
-                    bool actionHandled = false;
+                    ConcurrentQueue<IInput> PendingInputs = apiInputHandler.PerformAction(actionObject);
 
-                    // 檢查 'click' 屬性
-                    if (actionObject.TryGetPropertyValue("click", out var clickNode))
-                    {
-                        if (clickNode != null && clickNode.GetValue<JsonElement>().ValueKind == JsonValueKind.True)
-                        {
-                            actionStatus = game.TriggerClick();
-                            actionHandled = true;
-                        }
-                    }
-                    // 檢查 'move' 物件
-                    else if (actionObject.TryGetPropertyValue("move", out var moveNode))
-                    {
-                        var moveObject = moveNode as System.Text.Json.Nodes.JsonObject;
-                        if (moveObject == null)
-                        {
-                            await sendErrorResponse(response, HttpStatusCode.BadRequest, "'move' 屬性的值必須是一個包含 x 和 y 的物件。");
-                            return;
-                        }
 
-                        if (moveObject.TryGetPropertyValue("x", out var xNode) && xNode.GetValue<JsonElement>().TryGetInt32(out int x) &&
-                            moveObject.TryGetPropertyValue("y", out var yNode) && yNode.GetValue<JsonElement>().TryGetInt32(out int y))
-                        {
-                            // player.MoveTo(new osuTK.Vector2(x, y));
-                            actionHandled = true;
-                        }
-                        else
-                        {
-                            await sendErrorResponse(response, HttpStatusCode.BadRequest, "'move' 物件必須包含型別為整數的 'x' 和 'y' 屬性。");
-                            return;
-                        }
-                    }
-
-                    // *** 修改部分 ***
-                    // 如果有任何動作被成功處理
-                    if (actionHandled)
-                    {
+                    //// *** 修改部分 ***
+                    //// 如果有任何動作被成功處理
+                    //if (isActionHandled)
+                    //{
                         // 回傳 200 OK 並附上使用者傳入的原始 JSON 資料
-                        await sendSuccessResponse(response, jsonString, actionStatus);
-                    }
-                    else
-                    {
-                        // 如果請求有效但沒有可執行的動作，回傳錯誤
-                        await sendErrorResponse(response, HttpStatusCode.BadRequest, "請求中未包含有效的 'click' 或 'move' 動作。");
-                    }
+                        await sendSuccessResponse(response, jsonString, PendingInputs);
+                    //}
+                    //else
+                    //{
+                    //    // 如果請求有效但沒有可執行的動作，回傳錯誤
+                    //    await sendErrorResponse(response, HttpStatusCode.BadRequest, "請求中未包含有效的 'click' 或 'move' 動作，以及 'move' 屬性的值必須是一個包含 x 和 y 的物件。");
+                    //}
                 }
                 catch (JsonException ex)
                 {
-                    await sendErrorResponse(response, HttpStatusCode.BadRequest, $"JSON 格式錯誤: {ex.Message}");
+                    await sendErrorResponse(response, HttpStatusCode.BadRequest, $"JSON format error: {ex.Message}");
                 }
             }
             else
@@ -265,7 +250,7 @@ internal class ApiServer : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex.ToString());
+            Debug.WriteLine(ex.ToString());
         }
         finally
         {
@@ -280,7 +265,7 @@ internal class ApiServer : IDisposable
             cts?.Cancel();
             listener.Stop();
             listenTask?.Wait(1000);
-            Console.WriteLine("🛑 API Server stopped.");
+            Debug.WriteLine("🛑 API Server stopped.");
         }
         catch { }
     }

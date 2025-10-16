@@ -26,12 +26,21 @@ using osu.Game.Performance;
 using osu.Game.Updater;
 using osu.Game.Utils;
 
+using osu.Desktop.StudentCustomClass;
+
+
 namespace osu.Desktop
 {
     internal partial class OsuGameDesktop : OsuGame
     {
         private OsuSchemeLinkIPCChannel? osuSchemeLinkIPCChannel;
         private ArchiveImportIPCChannel? archiveImportIPCChannel;
+
+
+        // student:
+        private ApiInputHandler apiInputHandler = new();
+        // student:
+        private NamePipeServer server;
 
         [Cached(typeof(IHighPerformanceSessionManager))]
         private readonly HighPerformanceSessionManager highPerformanceSessionManager = new HighPerformanceSessionManager();
@@ -129,18 +138,22 @@ namespace osu.Desktop
             return true;
         }
 
-        // Add this for send data to API Server
+        // student: Add this for send data to API Server
         public new Scheduler Scheduler => base.Scheduler;
-        // Add this for send data to API Server
+        // student: Add this for send data to API Server
         public IScreen GetCurrentScreen() => ScreenStack.CurrentScreen;
+
 
         protected override void LoadComplete()
         {
             base.LoadComplete();
 
-            // Add this for send data to API Server
-            var server = new ApiServer(this);
-            // Add this for send data to API Server
+            Logger.Log("student: load complete", LoggingTarget.Input);
+            var availableInputHandler = Host.AvailableInputHandlers;
+            // student: Add this for send data to API Server
+
+            server = new NamePipeServer(this, apiInputHandler);
+            // student: Add this for send data to API Server
             server.Start();
 
             LoadComponentAsync(new DiscordRichPresence(), Add);

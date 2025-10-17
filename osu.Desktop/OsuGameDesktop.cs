@@ -27,6 +27,7 @@ using osu.Game.Updater;
 using osu.Game.Utils;
 
 using osu.Desktop.StudentCustomClass;
+using osu.Desktop.StudentCustomClass.servers;
 
 
 namespace osu.Desktop

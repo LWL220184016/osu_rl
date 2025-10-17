@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using Microsoft.Win32;
 using osu.Desktop.Performance;
 using osu.Desktop.Security;
+using osu.Desktop.StudentCustomClass;
+using osu.Desktop.StudentCustomClass.servers;
 using osu.Desktop.Updater;
 using osu.Desktop.Windows;
 using osu.Framework;
@@ -25,9 +27,6 @@ using osu.Game.Online.Multiplayer;
 using osu.Game.Performance;
 using osu.Game.Updater;
 using osu.Game.Utils;
-
-using osu.Desktop.StudentCustomClass;
-using osu.Desktop.StudentCustomClass.servers;
 
 
 namespace osu.Desktop
@@ -153,7 +152,7 @@ namespace osu.Desktop
             var availableInputHandler = Host.AvailableInputHandlers;
             // student: Add this for send data to API Server
 
-            server = new NamePipeServer(this, apiInputHandler);
+            server = new(this, apiInputHandler);
             // student: Add this for send data to API Server
             server.Start();
 

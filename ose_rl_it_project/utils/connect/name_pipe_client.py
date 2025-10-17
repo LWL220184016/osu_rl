@@ -57,7 +57,7 @@ class NamedPipeClient():
                     try:
                         # 解碼並嘗試解析 JSON，移除尾部的空字元
                         received_json = json.loads(data.decode('utf-8').strip('\x00'))
-                        print(f"[{time.time():.2f}] 收到 JSON 數據: {received_json}")
+                        print(f"[{time.time():.2f}] 收到 JSON 數據: {json.dumps(received_json, indent=4, ensure_ascii=False)}")
                     except json.JSONDecodeError:
                         print(f"收到 (非 JSON): {data.decode('utf-8', errors='ignore').strip()}")
                     except Exception as e:

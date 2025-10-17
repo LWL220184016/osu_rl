@@ -1,12 +1,17 @@
-﻿using System;
+﻿
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using MongoDB.Bson;
 using osu.Framework.Logging;
 using osu.Framework.Screens;
+using osu.Game.Beatmaps.ControlPoints;
 using osu.Game.Screens.Play;
 
 namespace osu.Desktop.StudentCustomClass.servers
@@ -17,7 +22,6 @@ namespace osu.Desktop.StudentCustomClass.servers
         private readonly ApiInputHandler apiInputHandler;
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
         private Task? serverTask;
-        private int num_msg = 0;
 
         public NamePipeServer(OsuGameDesktop game, ApiInputHandler handler)
         {
@@ -81,7 +85,7 @@ namespace osu.Desktop.StudentCustomClass.servers
                             break; // 出錯時跳出，重新連接
                         }
 
-                        await Task.Delay(50, token).ConfigureAwait(false); // 每 50ms 發送一次 (20Hz)，可自行調整
+                        await Task.Delay(500, token).ConfigureAwait(false); // 每 50ms 發送一次 (20Hz)，可自行調整
                     }
 
                     await readTask; // 等待讀取任務結束
@@ -139,12 +143,13 @@ namespace osu.Desktop.StudentCustomClass.servers
                         double? accuracy = null;
                         int? combo = null;
 
+
                         if (gameplay != null)
                         {
                             hasFailed = gameplay.HasFailed;
                             hasCompleted = gameplay.HasCompleted;
 
-                            if (gameplay.LastJudgementResult.Value is not null) // 修正原碼 bug: 應檢查 not null
+                            if (gameplay.LastJudgementResult.Value is not null) 
                             {
                                 var jr = gameplay.LastJudgementResult.Value;
                                 healthAtJudgement = jr.HealthAtJudgement;
@@ -152,12 +157,17 @@ namespace osu.Desktop.StudentCustomClass.servers
                                 healthIncrease = jr.HealthIncrease;
                             }
 
-                            if (gameplay.ScoreProcessor != null)
+                            if (gameplay.ScoreProcessor is not null)
                             {
                                 score = gameplay.ScoreProcessor.TotalScore.Value;
                                 accuracy = gameplay.ScoreProcessor.Accuracy.Value;
                                 combo = gameplay.ScoreProcessor.Combo.Value;
                             }
+
+                            //if (gameplay.Beatmap is not null)
+                            //{
+                                //如果要去拿打擊點的坐標，可能要到 drawable 的子類，或者渲染邏輯裏面找
+                            //}
                         }
 
                         var state = new
@@ -170,21 +180,17 @@ namespace osu.Desktop.StudentCustomClass.servers
                             HealthIncrease = healthIncrease,
                             score,
                             accuracy,
-                            combo
+                            combo,
                         };
 
                         tcs.SetResult(state);
                     }
                     else
                     {
-                        num_msg++;
-                        Logger.Log($"student: send data: {num_msg}", LoggingTarget.Input);
-
                         var state = new
                         {
                             IsInGame = false,
                             Time = game.Clock.CurrentTime,
-                            num_msg
                         };
                         tcs.SetResult(state);
                     }

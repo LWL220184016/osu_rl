@@ -1,4 +1,4 @@
-﻿
+﻿// NEW: 添加必要的 using
 using System;
 using System.IO;
 using System.IO.Pipes;
@@ -8,9 +8,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using osu.Framework.Input.Handlers.student;
 using osu.Framework.Logging;
+using osu.Framework.Platform;
 using osu.Framework.Screens;
-using osu.Game.Beatmaps.ControlPoints;
 using osu.Game.Screens.Play;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace osu.Desktop.StudentCustomClass.servers
 {
@@ -20,13 +24,13 @@ namespace osu.Desktop.StudentCustomClass.servers
         private readonly ApiInputHandler apiInputHandler;
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
         private Task? serverTask;
+        private GameHost Host;
 
-        public NamePipeServer(OsuGameDesktop game, ApiInputHandler handler)
+        public NamePipeServer(OsuGameDesktop game, ApiInputHandler handler, GameHost Host)
         {
             this.game = game;
             apiInputHandler = handler;
-
-            // 註冊退出事件，當主程式關閉時自動清理
+            this.Host = Host;
             AppDomain.CurrentDomain.ProcessExit += (_, __) => Dispose();
         }
 
@@ -37,7 +41,7 @@ namespace osu.Desktop.StudentCustomClass.servers
 
         private async Task runServerAsync(CancellationToken token)
         {
-            Logger.Log("C# Named Pipe Server 啟動中...", LoggingTarget.Input);
+            Logger.Log("student: C# Named Pipe Server 啟動中...", LoggingTarget.Input);
 
             while (!token.IsCancellationRequested)
             {
@@ -45,169 +49,210 @@ namespace osu.Desktop.StudentCustomClass.servers
                 try
                 {
                     pipeServer = new NamedPipeServerStream(
-                        "HighPerfPipe", PipeDirection.InOut, 1,
-                        PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                        "HighPerfPipe",
+                        PipeDirection.InOut,
+                        1,
+                        PipeTransmissionMode.Byte,
+                        PipeOptions.Asynchronous
+                    );
 
-                    Logger.Log("等待 Python 客戶端連接...", LoggingTarget.Input);
+                    Logger.Log("student: 等待 Python 客戶端連接...", LoggingTarget.Input);
                     await pipeServer.WaitForConnectionAsync(token).ConfigureAwait(false);
-                    Logger.Log("客戶端已連接！", LoggingTarget.Input);
+                    Logger.Log("student: 客戶端已連接！", LoggingTarget.Input);
 
-                    using var reader = new StreamReader(pipeServer, Encoding.UTF8);
-                    using var writer = new StreamWriter(pipeServer, Encoding.UTF8) { AutoFlush = true };
+                    // 建立讀取與發送任務
+                    var sendTask = Task.Run(() => sendLoopAsync(pipeServer, token));
+                    var recvTask = Task.Run(() => recvLoopAsync(pipeServer, token));
 
-                    pipeServer = null; // 轉移所有權，避免 dispose
-
-                    // 啟動讀取循環
-                    var readTask = Task.Run(async () =>
-                    {
-                        while (!token.IsCancellationRequested)
-                        {
-                            string? line = await reader.ReadLineAsync().ConfigureAwait(false);
-                            if (line == null) { break; }
-
-                            Logger.Log($"student: 收到原始字串: {line}", LoggingTarget.Input, LogLevel.Debug);
-                            try
-                            {
-                                using (JsonDocument doc = JsonDocument.Parse(line))
-                                {
-                                    apiInputHandler.PerformAction(doc);
-                                }
-                            }
-                            catch (JsonException ex)
-                            {
-                                Logger.Log($"student: JSON 解析失敗: {ex.Message}. 原始字串: \"{line}\"", LoggingTarget.Input, LogLevel.Error);
-                            }
-                            catch (Exception ex)
-                            {
-                                // 捕獲其他可能的例外
-                                Logger.Log($"student: 處理訊息時發生未預期的錯誤: {ex.Message}", LoggingTarget.Input, LogLevel.Error);
-                            }
-                        }
-                    }, token);
-
-                    // 持續發送遊戲狀態
-                    while (!token.IsCancellationRequested)
-                    {
-                        try
-                        {
-                            var state = await getCurrentStateAsync().ConfigureAwait(false);
-                            string json = JsonSerializer.Serialize(state);
-                            await writer.WriteLineAsync(json).ConfigureAwait(false);
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.Log($"發送狀態時出錯: {ex.Message}", LoggingTarget.Input);
-                            break; // 出錯時跳出，重新連接
-                        }
-
-                        await Task.Delay(500, token).ConfigureAwait(false); // 每 50ms 發送一次 (20Hz)，可自行調整
-                    }
-
-                    await readTask; // 等待讀取任務結束
+                    await Task.WhenAny(sendTask, recvTask).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
-                    // 正常取消
                     break;
                 }
                 catch (IOException ex)
                 {
-                    Logger.Log($"管道 IO 錯誤 (斷線或客戶端離開): {ex.Message}，等待重連...", LoggingTarget.Input);
+                    Logger.Log($"student: 管道 IO 錯誤 (斷線或客戶端離開): {ex.Message}，等待重連...", LoggingTarget.Input);
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"伺服器錯誤: {ex.Message}，等待重連...", LoggingTarget.Input);
+                    Logger.Log($"student: 伺服器錯誤: {ex.Message}，等待重連...", LoggingTarget.Input);
                 }
                 finally
                 {
                     pipeServer?.Dispose();
                 }
 
-                // 斷線後短暫延遲後重試，避免 CPU 過載
                 if (!token.IsCancellationRequested)
                 {
                     await Task.Delay(1000, token).ConfigureAwait(false);
                 }
             }
 
-            Logger.Log("Named Pipe Server 已停止。", LoggingTarget.Input);
+            Logger.Log("student: Named Pipe Server 已停止。", LoggingTarget.Input);
         }
 
-
-        private Task<object> getCurrentStateAsync()
+        // 傳送遊戲狀態
+        private async Task sendLoopAsync(NamedPipeServerStream pipe, CancellationToken token)
         {
-            var tcs = new TaskCompletionSource<object>();
+            while (!token.IsCancellationRequested && pipe.IsConnected)
+            {
+                try
+                {
+                    var (metaJson, imageBytes) = await getCurrentStateAsync().ConfigureAwait(false);
+                    byte[] metaBytes = Encoding.UTF8.GetBytes(metaJson);
+                    int metaLen = metaBytes.Length;
+                    int imgLen = imageBytes?.Length ?? 0;
 
-            game.Scheduler.Add(() =>
+                    byte[] header = new byte[8];
+                    BitConverter.GetBytes(metaLen).CopyTo(header, 0);
+                    BitConverter.GetBytes(imgLen).CopyTo(header, 4);
+
+                    await pipe.WriteAsync(header, 0, 8, token).ConfigureAwait(false);
+                    await pipe.WriteAsync(metaBytes, 0, metaLen, token).ConfigureAwait(false);
+                    if (imgLen > 0)
+                        await pipe.WriteAsync(imageBytes, 0, imgLen, token).ConfigureAwait(false);
+
+                    await pipe.FlushAsync(token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"student: 傳輸封包時出錯: {ex.Message}", LoggingTarget.Input, LogLevel.Error);
+                    break;
+                }
+
+                await Task.Delay(50, token).ConfigureAwait(false); // 約 20 FPS
+            }
+        }
+
+        // 讀取 Python 發送的數據
+        private async Task recvLoopAsync(NamedPipeServerStream pipe, CancellationToken token)
+        {
+            byte[] buffer = new byte[4096];
+            MemoryStream ms = new MemoryStream();
+
+            while (!token.IsCancellationRequested && pipe.IsConnected)
+            {
+                try
+                {
+                    int bytesRead = await pipe.ReadAsync(buffer, 0, buffer.Length, token).ConfigureAwait(false);
+                    if (bytesRead == 0)
+                    {
+                        await Task.Delay(5, token).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    ms.Write(buffer, 0, bytesRead);
+
+                    while (true)
+                    {
+                        ms.Position = 0;
+                        using var reader = new StreamReader(ms, Encoding.UTF8, false, 1024, true);
+                        string? line = await reader.ReadLineAsync();
+                        if (line == null)
+                            break;
+
+                        using (JsonDocument doc = JsonDocument.Parse(line))
+                        {
+                            apiInputHandler.PerformAction(doc);
+                        }
+
+                        // 剩餘未處理資料複製回新流
+                        var remaining = ms.Length - ms.Position;
+                        if (remaining > 0)
+                        {
+                            byte[] tmp = new byte[remaining];
+                            ms.Read(tmp, 0, (int)remaining);
+                            ms = new MemoryStream(tmp);
+                        }
+                        else
+                        {
+                            ms.SetLength(0);
+                            break;
+                        }
+                    }
+                }
+                catch (IOException)
+                {
+                    Logger.Log("student: 動作接收端斷開連線。", LoggingTarget.Input);
+                    break;
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"student: recvLoop 錯誤: {ex.Message}", LoggingTarget.Input, LogLevel.Error);
+                    ms.SetLength(0);
+                }
+            }
+        }
+
+        // 游戲畫面截圖 + 狀態收集
+        private Task<(string metaJson, byte[]? imageBytes)> getCurrentStateAsync()
+        {
+            var tcs = new TaskCompletionSource<(string, byte[]?)>();
+
+            game.Scheduler.Add(async () =>
             {
                 try
                 {
                     var currentScreen = game.GetCurrentScreen();
+                    byte[]? imageBytes = null;
 
                     if (currentScreen is Player player && player.IsLoaded)
                     {
-                        var gameplay = player.GameplayState;
-
-                        // 預設值，避免 null
-                        bool? hasFailed = null;
-                        bool? hasCompleted = null;
-                        double? healthAtJudgement = null;
-                        bool? isHit = null;
-                        double? healthIncrease = null;
-                        long? score = null;
-                        double? accuracy = null;
-                        int? combo = null;
-
-
-                        if (gameplay != null)
+                        try
                         {
-                            hasFailed = gameplay.HasFailed;
-                            hasCompleted = gameplay.HasCompleted;
-
-                            if (gameplay.LastJudgementResult.Value is not null) 
+                            using (Image<Rgba32>? screenshot = await Host.TakeScreenshotAsync())
                             {
-                                var jr = gameplay.LastJudgementResult.Value;
-                                healthAtJudgement = jr.HealthAtJudgement;
-                                isHit = jr.IsHit;
-                                healthIncrease = jr.HealthIncrease;
-                            }
+                                if (screenshot != null)
+                                {
+                                    screenshot.Mutate(x => x.Resize(new ResizeOptions
+                                    {
+                                        Size = new Size(128, 72),
+                                        Mode = ResizeMode.Stretch
+                                    }));
 
-                            if (gameplay.ScoreProcessor is not null)
-                            {
-                                score = gameplay.ScoreProcessor.TotalScore.Value;
-                                accuracy = gameplay.ScoreProcessor.Accuracy.Value;
-                                combo = gameplay.ScoreProcessor.Combo.Value;
+                                    await using var ms = new MemoryStream();
+                                    await screenshot.SaveAsJpegAsync(ms, new JpegEncoder { Quality = 70 });
+                                    imageBytes = ms.ToArray();
+                                }
                             }
-
-                            //if (gameplay.Beatmap is not null)
-                            //{
-                                //如果要去拿打擊點的坐標，可能要到 drawable 的子類，或者渲染邏輯裏面找
-                            //}
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Log($"student: 截圖或編碼失敗: {ex.Message}", LoggingTarget.Runtime, LogLevel.Error);
                         }
 
+                        var gameplay = player.GameplayState;
                         var state = new
                         {
                             IsInGame = true,
-                            HasFailed = hasFailed,
-                            HasCompleted = hasCompleted,
-                            HealthAtJudgement = healthAtJudgement,
-                            IsHit = isHit,
-                            HealthIncrease = healthIncrease,
-                            score,
-                            accuracy,
-                            combo,
+                            gameplay?.HasFailed,
+                            gameplay?.HasCompleted,
+
+                            gameplay?.LastJudgementResult.Value.HealthAtJudgement,
+                            gameplay?.LastJudgementResult.Value.IsHit,
+                            gameplay?.LastJudgementResult.Value.HealthIncrease,
+
+                            TotalScore = gameplay?.ScoreProcessor?.TotalScore.Value,
+                            Accuracy = gameplay?.ScoreProcessor?.Accuracy.Value,
+                            Combo = gameplay?.ScoreProcessor?.Combo.Value
                         };
 
-                        tcs.SetResult(state);
+                        string json = JsonSerializer.Serialize(state);
+                        tcs.SetResult((json, imageBytes));
                     }
                     else
                     {
-                        var state = new
+                        string json = JsonSerializer.Serialize(new
                         {
                             IsInGame = false,
-                            Time = game.Clock.CurrentTime,
-                        };
-                        tcs.SetResult(state);
+                            Time = game.Clock.CurrentTime
+                        });
+                        tcs.SetResult((json, null));
                     }
                 }
                 catch (Exception ex)
@@ -223,10 +268,10 @@ namespace osu.Desktop.StudentCustomClass.servers
         {
             if (!cts.IsCancellationRequested)
             {
-                Logger.Log("正在清理 Named Pipe Server...", LoggingTarget.Input);
+                Logger.Log("student: 正在清理 Named Pipe Server...", LoggingTarget.Input);
                 cts.Cancel();
             }
-            serverTask?.Wait(1000); // 等待任務結束
+            serverTask?.Wait(1000);
             cts.Dispose();
         }
     }

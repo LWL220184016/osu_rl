@@ -154,9 +154,10 @@ namespace osu.Desktop
                 apiInputHandler = handler;
             }
 
-            server = new(this, apiInputHandler);
+            server = new(this, apiInputHandler, Host);
             // student: Add this for send data to API Server
             server.Start();
+            // student ========================================================================================
 
             LoadComponentAsync(new DiscordRichPresence(), Add);
 

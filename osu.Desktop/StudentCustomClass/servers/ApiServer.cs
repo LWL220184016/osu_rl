@@ -8,8 +8,6 @@ using System.Threading.Tasks;
 using osu.Desktop;
 using osu.Framework.Screens;
 using osu.Game.Screens.Play;
-
-using osu.Desktop.StudentCustomClass;
 using System.Collections.Concurrent;
 using osu.Framework.Input.StateChanges;
 using osu.Framework.Extensions.EnumExtensions;
@@ -20,6 +18,7 @@ using osu.Framework.Input.Handlers.Keyboard;
 using System.Diagnostics;
 using OpenTabletDriver.Plugin;
 using osu.Framework.Logging;
+using osu.Framework.Input.Handlers.student;
 //KeyboardHandler
 //WindowsGameHost
 
@@ -132,7 +131,7 @@ internal class ApiServer : IDisposable
         return tcs.Task;
     }
 
-    private async Task sendSuccessResponse(HttpListenerResponse response, string originalJsonData, ConcurrentQueue<IInput> PendingInputs)
+    private async Task sendSuccessResponse(HttpListenerResponse response, string originalJsonData)
     {
         try
         {
@@ -140,7 +139,6 @@ internal class ApiServer : IDisposable
             //    我們假設傳入的 originalJsonData 必然是個有效的 JSON 物件，因為它在之前已經被驗證過了
             var jsonObject = System.Text.Json.Nodes.JsonNode.Parse(originalJsonData)!.AsObject();
 
-            jsonObject["PendingInputs_count"] = PendingInputs.Count;
 
             //int i = 0;
             //foreach (var handler in availableInputHandler)
@@ -214,29 +212,29 @@ internal class ApiServer : IDisposable
 
                 try
                 {
-                    var actionNode = System.Text.Json.Nodes.JsonNode.Parse(jsonString);
+                    var actionNode = JsonDocument.Parse(jsonString);
 
-                    if (actionNode is not System.Text.Json.Nodes.JsonObject actionObject)
+                    if (actionNode is not JsonDocument actionObject)
                     {
                         await sendErrorResponse(response, HttpStatusCode.BadRequest, "The incoming JSON format must be an object。");
                         return;
                     }
 
-                    ConcurrentQueue<IInput> PendingInputs = apiInputHandler.PerformAction(actionObject);
+                    bool isActionHandled = apiInputHandler.PerformAction(actionObject);
 
 
-                    //// *** 修改部分 ***
-                    //// 如果有任何動作被成功處理
-                    //if (isActionHandled)
-                    //{
-                        // 回傳 200 OK 並附上使用者傳入的原始 JSON 資料
-                        await sendSuccessResponse(response, jsonString, PendingInputs);
-                    //}
-                    //else
-                    //{
-                    //    // 如果請求有效但沒有可執行的動作，回傳錯誤
-                    //    await sendErrorResponse(response, HttpStatusCode.BadRequest, "請求中未包含有效的 'click' 或 'move' 動作，以及 'move' 屬性的值必須是一個包含 x 和 y 的物件。");
-                    //}
+                    // *** 修改部分 ***
+                    // 如果有任何動作被成功處理
+                    if (isActionHandled)
+                    {
+                        //回傳 200 OK 並附上使用者傳入的原始 JSON 資料
+                        await sendSuccessResponse(response, jsonString);
+                    }
+                    else
+                    {
+                        // 如果請求有效但沒有可執行的動作，回傳錯誤
+                        await sendErrorResponse(response, HttpStatusCode.BadRequest, "請求中未包含有效的 'click' 或 'move' 動作，以及 'move' 屬性的值必須是一個包含 x 和 y 的物件。");
+                    }
                 }
                 catch (JsonException ex)
                 {

@@ -9,12 +9,12 @@ using System.Threading.Tasks;
 using Microsoft.Win32;
 using osu.Desktop.Performance;
 using osu.Desktop.Security;
-using osu.Desktop.StudentCustomClass;
 using osu.Desktop.StudentCustomClass.servers;
 using osu.Desktop.Updater;
 using osu.Desktop.Windows;
 using osu.Framework;
 using osu.Framework.Allocation;
+using osu.Framework.Input.Handlers.student;
 using osu.Framework.Logging;
 using osu.Framework.Platform;
 using osu.Framework.Screens;
@@ -37,8 +37,6 @@ namespace osu.Desktop
         private ArchiveImportIPCChannel? archiveImportIPCChannel;
 
 
-        // student:
-        private ApiInputHandler apiInputHandler = new();
         // student:
         private NamePipeServer server;
 
@@ -149,8 +147,12 @@ namespace osu.Desktop
             base.LoadComplete();
 
             Logger.Log("student: load complete", LoggingTarget.Input);
-            var availableInputHandler = Host.AvailableInputHandlers;
+            ApiInputHandler apiInputHandler = null;
             // student: Add this for send data to API Server
+            foreach (var handler in Host.AvailableInputHandlers.OfType<ApiInputHandler>())
+            {
+                apiInputHandler = handler;
+            }
 
             server = new(this, apiInputHandler);
             // student: Add this for send data to API Server

@@ -1,14 +1,12 @@
 ﻿
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
-using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using MongoDB.Bson;
+using osu.Framework.Input.Handlers.student;
 using osu.Framework.Logging;
 using osu.Framework.Screens;
 using osu.Game.Beatmaps.ControlPoints;
@@ -65,8 +63,25 @@ namespace osu.Desktop.StudentCustomClass.servers
                         while (!token.IsCancellationRequested)
                         {
                             string? line = await reader.ReadLineAsync().ConfigureAwait(false);
-                            if (line == null) break;
-                            Logger.Log($"student: 收到: {line}", LoggingTarget.Input, LogLevel.Important);
+                            if (line == null) { break; }
+
+                            Logger.Log($"student: 收到原始字串: {line}", LoggingTarget.Input, LogLevel.Debug);
+                            try
+                            {
+                                using (JsonDocument doc = JsonDocument.Parse(line))
+                                {
+                                    apiInputHandler.PerformAction(doc);
+                                }
+                            }
+                            catch (JsonException ex)
+                            {
+                                Logger.Log($"student: JSON 解析失敗: {ex.Message}. 原始字串: \"{line}\"", LoggingTarget.Input, LogLevel.Error);
+                            }
+                            catch (Exception ex)
+                            {
+                                // 捕獲其他可能的例外
+                                Logger.Log($"student: 處理訊息時發生未預期的錯誤: {ex.Message}", LoggingTarget.Input, LogLevel.Error);
+                            }
                         }
                     }, token);
 

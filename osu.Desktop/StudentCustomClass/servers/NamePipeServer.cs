@@ -1,4 +1,4 @@
-﻿// NEW: 添加必要的 using
+﻿
 using System;
 using System.IO;
 using System.IO.Pipes;
@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using osu.Framework.Input.Handlers.student;
 using osu.Framework.Logging;
 using osu.Framework.Platform;
-using osu.Framework.Screens;
 using osu.Game.Screens.Play;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
@@ -25,6 +24,10 @@ namespace osu.Desktop.StudentCustomClass.servers
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
         private Task? serverTask;
         private GameHost Host;
+        private string modelObsType;
+        private int imageX;
+        private int imageY;
+        private int delay;
 
         public NamePipeServer(OsuGameDesktop game, ApiInputHandler handler, GameHost Host)
         {
@@ -72,11 +75,11 @@ namespace osu.Desktop.StudentCustomClass.servers
                 }
                 catch (IOException ex)
                 {
-                    Logger.Log($"student: 管道 IO 錯誤 (斷線或客戶端離開): {ex.Message}，等待重連...", LoggingTarget.Input);
+                    Logger.Log($"student: 管道 IO 錯誤 (斷線或客戶端離開): {ex.Message}，等待重連...", LoggingTarget.Input, LogLevel.Error);
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"student: 伺服器錯誤: {ex.Message}，等待重連...", LoggingTarget.Input);
+                    Logger.Log($"student: 伺服器錯誤: {ex.Message}，等待重連...", LoggingTarget.Input, LogLevel.Error);
                 }
                 finally
                 {
@@ -121,7 +124,7 @@ namespace osu.Desktop.StudentCustomClass.servers
                     break;
                 }
 
-                await Task.Delay(50, token).ConfigureAwait(false); // 約 20 FPS
+                await Task.Delay(delay, token).ConfigureAwait(false); // FPS 的值等於 1000 除以 delay
             }
         }
 
@@ -154,7 +157,44 @@ namespace osu.Desktop.StudentCustomClass.servers
 
                         using (JsonDocument doc = JsonDocument.Parse(line))
                         {
-                            apiInputHandler.PerformAction(doc);
+                            var root = doc.RootElement;
+
+                            // update obs type for model
+                            if (root.TryGetProperty("model_obs_type", out var model_obs_type))
+                            {
+                                modelObsType = model_obs_type.GetString();
+                                Logger.Log($"student: modelObsType 已更新，modelObsType: {modelObsType}", LoggingTarget.Input);
+                            }
+
+                            // update image size for resize image
+                            if (root.TryGetProperty("image_size", out var image_size))
+                            {
+                                if (image_size[0].TryGetInt32(out int x) && image_size[1].TryGetInt32(out int y))
+                                {
+                                    imageX = x;
+                                    imageY = y;
+                                    Logger.Log($"student: imageSize 已更新，imageX: {imageX}, imageY: {imageY}", LoggingTarget.Input);
+                                }
+                                else
+                                {
+                                    Logger.Log($"student: image_size JsonElement 转换 int 失敗: {image_size}", LoggingTarget.Input, LogLevel.Error);
+                                }
+                            }
+
+                            // update delay after send data to python client
+                            if (root.TryGetProperty("fps", out var fps))
+                            {
+                                if (fps.TryGetInt32(out int FPS))
+                                {
+                                    delay = 1000 / FPS;
+                                    Logger.Log($"student: delay 已更新，delay: {delay}", LoggingTarget.Input);
+                                }
+                                else
+                                {
+                                    Logger.Log($"student: fps JsonElement 转换 int 失敗: {fps}", LoggingTarget.Input, LogLevel.Error);
+                                }
+                            }
+                            apiInputHandler.PerformAction(root);
                         }
 
                         // 剩餘未處理資料複製回新流
@@ -174,7 +214,7 @@ namespace osu.Desktop.StudentCustomClass.servers
                 }
                 catch (IOException)
                 {
-                    Logger.Log("student: 動作接收端斷開連線。", LoggingTarget.Input);
+                    Logger.Log("student: 動作接收端斷開連線。", LoggingTarget.Input, LogLevel.Error);
                     break;
                 }
                 catch (OperationCanceledException)
@@ -211,7 +251,7 @@ namespace osu.Desktop.StudentCustomClass.servers
                                 {
                                     screenshot.Mutate(x => x.Resize(new ResizeOptions
                                     {
-                                        Size = new Size(128, 72),
+                                        Size = new(imageX, imageY),
                                         Mode = ResizeMode.Stretch
                                     }));
 
@@ -223,7 +263,7 @@ namespace osu.Desktop.StudentCustomClass.servers
                         }
                         catch (Exception ex)
                         {
-                            Logger.Log($"student: 截圖或編碼失敗: {ex.Message}", LoggingTarget.Runtime, LogLevel.Error);
+                            Logger.Log($"student: 截圖或編碼失敗: {ex.Message}", LoggingTarget.Input, LogLevel.Error);
                         }
 
                         var gameplay = player.GameplayState;

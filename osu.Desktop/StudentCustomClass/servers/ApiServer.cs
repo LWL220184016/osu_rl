@@ -219,8 +219,8 @@ internal class ApiServer : IDisposable
                         await sendErrorResponse(response, HttpStatusCode.BadRequest, "The incoming JSON format must be an object。");
                         return;
                     }
-
-                    bool isActionHandled = apiInputHandler.PerformAction(actionObject);
+                    JsonElement action = actionObject.RootElement;
+                    bool isActionHandled = apiInputHandler.PerformAction(action);
 
 
                     // *** 修改部分 ***

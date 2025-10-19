@@ -273,9 +273,9 @@ namespace osu.Desktop.StudentCustomClass.servers
                             gameplay?.HasFailed,
                             gameplay?.HasCompleted,
 
-                            gameplay?.LastJudgementResult.Value.HealthAtJudgement,
-                            gameplay?.LastJudgementResult.Value.IsHit,
-                            gameplay?.LastJudgementResult.Value.HealthIncrease,
+                            gameplay?.LastJudgementResult.Value?.HealthAtJudgement,
+                            gameplay?.LastJudgementResult.Value?.IsHit,
+                            gameplay?.LastJudgementResult.Value?.HealthIncrease,
 
                             TotalScore = gameplay?.ScoreProcessor?.TotalScore.Value,
                             Accuracy = gameplay?.ScoreProcessor?.Accuracy.Value,

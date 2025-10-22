@@ -74,6 +74,12 @@ namespace osu.Desktop
             string gameName = base_game_name;
             bool tournamentClient = false;
 
+            // student
+            bool isWorkerInstance = false;
+
+            // student
+            string WorkerID = null;
+
             foreach (string arg in args)
             {
                 string[] split = arg.Split('=');
@@ -86,6 +92,17 @@ namespace osu.Desktop
                     case "--tournament":
                         tournamentClient = true;
                         break;
+
+                    // student: ------------------------------------------------------------------
+                    case "--worker-id":
+                        if (string.IsNullOrEmpty(val))
+                            throw new ArgumentException("Provided worker ID cannot be empty.");
+
+                        gameName = $"{base_game_name}-{val}";
+                        WorkerID = val;
+                        isWorkerInstance = true; // 設置旗標
+                        break;
+                    // ---------------------------------------------------------------------------
 
                     case "--debug-client-id":
                         if (!DebugUtils.IsDebugBuild)
@@ -113,7 +130,13 @@ namespace osu.Desktop
                         return;
 
                     // we want to allow multiple instances to be started when in debug.
-                    if (!DebugUtils.IsDebugBuild)
+                    // student: ------------------------------------------------------------------------------------------------------------------------
+                    //if (!DebugUtils.IsDebugBuild)
+
+                    // change to:
+
+                    if (!DebugUtils.IsDebugBuild && !isWorkerInstance) // <<< 修改這裡的條件
+                    // ---------------------------------------------------------------------------------------------------------------------------------
                     {
                         Logger.Log(@"osu! does not support multiple running instances.", LoggingTarget.Runtime, LogLevel.Error);
                         return;
@@ -140,7 +163,10 @@ namespace osu.Desktop
                 //{
                 host.Run(new OsuGameDesktop(args)
                 {
-                    IsFirstRun = isFirstRun
+                    IsFirstRun = isFirstRun,
+
+                    // student:
+                    WorkerID = WorkerID
                 });
                 //}
             }

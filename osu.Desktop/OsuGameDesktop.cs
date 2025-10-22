@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.Win32;
 using osu.Desktop.Performance;
 using osu.Desktop.Security;
-using osu.Desktop.StudentCustomClass.servers;
+using osu.Desktop.StudentCustomClass.connections;
 using osu.Desktop.Updater;
 using osu.Desktop.Windows;
 using osu.Framework;
@@ -38,7 +38,9 @@ namespace osu.Desktop
 
 
         // student:
-        private NamePipeServer server;
+        private NamePipeClient client;
+        // student:
+        public string WorkerID { get; init; }
 
         [Cached(typeof(IHighPerformanceSessionManager))]
         private readonly HighPerformanceSessionManager highPerformanceSessionManager = new HighPerformanceSessionManager();
@@ -154,9 +156,9 @@ namespace osu.Desktop
                 apiInputHandler = handler;
             }
 
-            server = new(this, apiInputHandler, Host);
+            client = new(this, apiInputHandler, Host);
             // student: Add this for send data to API Server
-            server.Start();
+            client.Start(WorkerID);
             // student ========================================================================================
 
             LoadComponentAsync(new DiscordRichPresence(), Add);

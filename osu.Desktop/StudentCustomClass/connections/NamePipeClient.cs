@@ -15,30 +15,35 @@ using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
-namespace osu.Desktop.StudentCustomClass.servers
+namespace osu.Desktop.StudentCustomClass.connections
 {
-    internal class NamePipeServer : IDisposable
+    internal class NamePipeClient : IDisposable
     {
         private readonly OsuGameDesktop game;
         private readonly ApiInputHandler apiInputHandler;
         private readonly CancellationTokenSource cts = new CancellationTokenSource();
         private Task? serverTask;
-        private GameHost Host;
+        private GameHost host;
         private string modelObsType;
         private int imageX;
         private int imageY;
         private int delay;
+        private string workerID = "0";
 
-        public NamePipeServer(OsuGameDesktop game, ApiInputHandler handler, GameHost Host)
+        public NamePipeClient(OsuGameDesktop game, ApiInputHandler handler, GameHost host)
         {
             this.game = game;
             apiInputHandler = handler;
-            this.Host = Host;
+            this.host = host;
             AppDomain.CurrentDomain.ProcessExit += (_, __) => Dispose();
         }
 
-        public void Start()
+        public void Start(string WorkerID)
         {
+            if (WorkerID != null)
+            {
+                workerID = WorkerID;
+            }
             serverTask = runServerAsync(cts.Token);
         }
 
@@ -48,24 +53,26 @@ namespace osu.Desktop.StudentCustomClass.servers
 
             while (!token.IsCancellationRequested)
             {
-                NamedPipeServerStream? pipeServer = null;
+                NamedPipeClientStream? pipeClient = null;
                 try
                 {
-                    pipeServer = new NamedPipeServerStream(
-                        "HighPerfPipe",
+                    pipeClient = new NamedPipeClientStream(
+                        ".", // "." 表示本機
+                        "HighPerfPipe" + workerID,
                         PipeDirection.InOut,
-                        1,
-                        PipeTransmissionMode.Byte,
                         PipeOptions.Asynchronous
                     );
 
-                    Logger.Log("student: 等待 Python 客戶端連接...", LoggingTarget.Input);
-                    await pipeServer.WaitForConnectionAsync(token).ConfigureAwait(false);
-                    Logger.Log("student: 客戶端已連接！", LoggingTarget.Input);
+                    Logger.Log($"student: 正在連接到管道 '{"HighPerfPipe" + workerID}'...", LoggingTarget.Input);
+
+                    // 使用 ConnectAsync 來嘗試連接到伺服器，可以設定一個逾時時間
+                    // 這裡設定 5 秒逾時
+                    await pipeClient.ConnectAsync(5000, token).ConfigureAwait(false);
+                    Logger.Log("student: 已連接到服務器！", LoggingTarget.Input);
 
                     // 建立讀取與發送任務
-                    var sendTask = Task.Run(() => sendLoopAsync(pipeServer, token));
-                    var recvTask = Task.Run(() => recvLoopAsync(pipeServer, token));
+                    var sendTask = Task.Run(() => sendLoopAsync(pipeClient, token));
+                    var recvTask = Task.Run(() => recvLoopAsync(pipeClient, token));
 
                     await Task.WhenAny(sendTask, recvTask).ConfigureAwait(false);
                 }
@@ -83,7 +90,7 @@ namespace osu.Desktop.StudentCustomClass.servers
                 }
                 finally
                 {
-                    pipeServer?.Dispose();
+                    pipeClient?.Dispose();
                 }
 
                 if (!token.IsCancellationRequested)
@@ -96,7 +103,7 @@ namespace osu.Desktop.StudentCustomClass.servers
         }
 
         // 傳送遊戲狀態
-        private async Task sendLoopAsync(NamedPipeServerStream pipe, CancellationToken token)
+        private async Task sendLoopAsync(NamedPipeClientStream pipe, CancellationToken token)
         {
             while (!token.IsCancellationRequested && pipe.IsConnected)
             {
@@ -129,7 +136,7 @@ namespace osu.Desktop.StudentCustomClass.servers
         }
 
         // 讀取 Python 發送的數據
-        private async Task recvLoopAsync(NamedPipeServerStream pipe, CancellationToken token)
+        private async Task recvLoopAsync(NamedPipeClientStream pipe, CancellationToken token)
         {
             byte[] buffer = new byte[4096];
             MemoryStream ms = new MemoryStream();
@@ -245,7 +252,7 @@ namespace osu.Desktop.StudentCustomClass.servers
                     {
                         try
                         {
-                            using (Image<Rgba32>? screenshot = await Host.TakeScreenshotAsync())
+                            using (Image<Rgba32>? screenshot = await host.TakeScreenshotAsync())
                             {
                                 if (screenshot != null)
                                 {

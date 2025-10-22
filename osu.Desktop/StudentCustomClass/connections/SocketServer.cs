@@ -11,7 +11,7 @@
 //using osu.Framework.Screens;
 //using osu.Game.Screens.Play;
 
-//namespace osu.Desktop.StudentCustomClass.servers
+//namespace osu.Desktop.StudentCustomClass.connections
 //{
 //    會卡死在不知道是 C# 讀取數據還是 Python 發送數據
 //    internal class SocketServer : IDisposable

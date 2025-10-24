@@ -95,7 +95,9 @@ namespace osu.Game.Screens.Play
         /// <summary>
         /// Whether gameplay should pause when the game window focus is lost.
         /// </summary>
-        protected virtual bool PauseOnFocusLost => true;
+
+        // student: default is true, set for false for multiple env training
+        protected virtual bool PauseOnFocusLost => false;
 
         public Action<bool> PrepareLoaderForRestart;
 

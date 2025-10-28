@@ -148,6 +148,7 @@ namespace osu.Desktop
         {
             base.LoadComplete();
 
+            // student ========================================================================================
             Logger.Log("student: load complete", LoggingTarget.Input);
             ApiInputHandler apiInputHandler = null;
             // student: Add this for send data to API Server

@@ -285,6 +285,46 @@ namespace osu.Game.Screens.SelectV2
             CriteriaChanged?.Invoke(currentCriteria);
         }
 
+
+        //-----------------------------------------------------------------------------------
+        // student:
+        public FilterCriteria CreateCriteria(string query)
+        {
+            query ??= searchTextBox.Current.Value;
+
+            bool isValidUser = localUser.Value.Id > 1;
+
+            var criteria = new FilterCriteria
+            {
+                Sort = sortDropdown.Current.Value,
+                Group = groupDropdown.Current.Value,
+                AllowConvertedBeatmaps = showConvertedBeatmapsButton.Active.Value,
+                Ruleset = ruleset.Value,
+                Mods = mods.Value,
+                CollectionBeatmapMD5Hashes = collectionDropdown.Current.Value?.Collection?.PerformRead(c => c.BeatmapMD5Hashes).ToImmutableHashSet(),
+                LocalUserId = isValidUser ? localUser.Value.Id : null,
+                LocalUserUsername = isValidUser ? localUser.Value.Username : null,
+            };
+
+            if (!difficultyRangeSlider.LowerBound.IsDefault)
+                criteria.UserStarDifficulty.Min = difficultyRangeSlider.LowerBound.Value;
+
+            if (!difficultyRangeSlider.UpperBound.IsDefault)
+                criteria.UserStarDifficulty.Max = difficultyRangeSlider.UpperBound.Value;
+
+            criteria.RulesetCriteria = ruleset.Value.CreateInstance().CreateRulesetFilterCriteria();
+
+            FilterQueryParser.ApplyQueries(criteria, query);
+            return criteria;
+        }
+
+        public void updateCriteria(string query)
+        {
+            currentCriteria = CreateCriteria(query);
+            CriteriaChanged?.Invoke(currentCriteria);
+        }
+        //-----------------------------------------------------------------------------------
+
         /// <summary>
         /// Set the query to the search text box.
         /// </summary>

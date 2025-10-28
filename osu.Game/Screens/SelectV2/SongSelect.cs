@@ -111,7 +111,12 @@ namespace osu.Game.Screens.SelectV2
 
         private BeatmapCarousel carousel = null!;
 
-        private FilterControl filterControl = null!;
+        // student:
+        // change from private to public
+        //private FilterControl filterControl = null!;
+        public FilterControl filterControl = null!;
+
+
         private BeatmapTitleWedge titleWedge = null!;
         private BeatmapDetailsArea detailsArea = null!;
         private FillFlowContainer wedgesContainer = null!;
@@ -162,6 +167,7 @@ namespace osu.Game.Screens.SelectV2
         private void load(AudioManager audio, OsuConfigManager config)
         {
             errorSample = audio.Samples.Get(@"UI/generic-error");
+            Logger.Log("==================================================load", LoggingTarget.Input);
 
             AddRangeInternal(new Drawable[]
             {
@@ -533,6 +539,23 @@ namespace osu.Game.Screens.SelectV2
         /// <param name="startAction">The action to perform if conditions are met to be able to proceed. May not be invoked if in an invalid state.</param>
         public void SelectAndRun(BeatmapInfo beatmap, Action startAction)
         {
+            Logger.Log("SongSelect SelectAndRun", LoggingTarget.Input);
+            StackTrace stackTrace = new StackTrace();
+
+            var callerMethod = stackTrace.GetFrame(1)?.GetMethod();
+
+            if (callerMethod != null)
+            {
+                string callerClassName = callerMethod.DeclaringType?.FullName ?? "Unknown Class";
+                string callerMethodName = callerMethod.Name;
+
+                Logger.Log($"GetForwardActions instantiated by: Class -> {callerClassName}, Method -> {callerMethodName}", LoggingTarget.Input, LogLevel.Debug);
+            }
+            else
+            {
+                Logger.Log("GetForwardActions instantiated but caller could not be determined.", LoggingTarget.Input, LogLevel.Debug);
+            }
+
             if (!this.IsCurrentScreen())
                 return;
 
@@ -760,6 +783,7 @@ namespace osu.Game.Screens.SelectV2
 
             logo.Action = () =>
             {
+                Logger.Log("==========================LogoArriving", LoggingTarget.Input);
                 SelectAndRun(Beatmap.Value.BeatmapInfo, OnStart);
                 return false;
             };
@@ -1002,6 +1026,7 @@ namespace osu.Game.Screens.SelectV2
                     // one of which is filtering out all visible beatmaps and attempting to start gameplay.
                     // in that case, users still expect a `Select` press to advance to gameplay anyway, using the ambient selected beatmap if there is one,
                     // which matches the behaviour resulting from clicking the osu! cookie in that scenario.
+                    Logger.Log("================================================OnPressed", LoggingTarget.Input);
                     SelectAndRun(Beatmap.Value.BeatmapInfo, OnStart);
                     return true;
 
@@ -1164,6 +1189,8 @@ namespace osu.Game.Screens.SelectV2
 
         public virtual IEnumerable<OsuMenuItem> GetForwardActions(BeatmapInfo beatmap)
         {
+            Logger.Log("==============================================GetForwardActions", LoggingTarget.Input);
+
             yield return new OsuMenuItem(GlobalActionKeyBindingStrings.Select, MenuItemType.Highlighted, () => SelectAndRun(beatmap, OnStart))
             {
                 Icon = FontAwesome.Solid.Check
